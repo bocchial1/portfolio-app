@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  # Backend service - FastAPI application
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: portfolio-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - portfolio-network
+    restart: unless-stopped
+
+  # Frontend service - React application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: portfolio-frontend
+    ports:
+      - "5173:80"  # Map host port 5173 to container port 80 (nginx)
+    depends_on:
+      - backend
+    networks:
+      - portfolio-network
+    restart: unless-stopped
+
+# Custom network for service communication
+networks:
+  portfolio-network:
+    driver: bridge
