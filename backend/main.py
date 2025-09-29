@@ -81,19 +81,14 @@ async def get_projects():
     """
     return [
         {
-            "title": "E-Commerce Platform",
-            "description": "A full-featured online store with payment gateway integration and a custom admin dashboard.",
-            "technologies": ["React", "Node.js", "PostgreSQL", "Stripe API"]
+            "title": "Crustopher (AIOps Agent)",
+            "description": "Designed and implemented an AIOps agent that analyzes diverse data streams to proactively predict and mitigate system failures, ensuring high availability. Deployed the system on a dedicated MCP server, configuring a full suite of tools to ensure high availability and robust performance for in-store use.",
+            "technologies": ["Python", "AI/ML", "MCP Server", "Data Analytics", "System Monitoring"]
         },
         {
-            "title": "Data Visualization Dashboard",
-            "description": "An interactive dashboard for visualizing real-time analytics using D3.js.",
-            "technologies": ["React", "D3.js", "FastAPI", "WebSocket"]
-        },
-        {
-            "title": "Mobile Fitness App",
-            "description": "A cross-platform mobile app for tracking workouts and nutrition.",
-            "technologies": ["React Native", "Firebase", "GraphQL"]
+            "title": "Chess Application (AI Opponent)",
+            "description": "Developed and trained a machine learning model to serve as an intelligent AI opponent, analyzing complex game states to predict and execute optimal moves in real-time. Engineered the application in C++, focusing on logical accuracy and creating a simple UI for personal use and testing.",
+            "technologies": ["C++", "Machine Learning", "AI", "Game Development", "UI/UX"]
         }
     ]
 
