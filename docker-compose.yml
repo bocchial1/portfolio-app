@@ -29,23 +29,21 @@ services:
       - portfolio-network
     restart: unless-stopped
 
-  # Chess MCP Server - Chess.com API integration
-  chess-mcp:
-    build:
-      context: ./chess-mcp
-      dockerfile: Dockerfile
-    container_name: portfolio-chess-mcp
-    ports:
-      - "8001:8000"  # Map host port 8001 to container port 8000
+  # Stockfish Chess Engine Service
+  stockfish:
+    image: ivangabriele/dockfish:15
+    container_name: portfolio-stockfish
     environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONDONTWRITEBYTECODE=1
-      - PYTHONPATH=/app
+      - PORT=4000
+      - API_TOKEN=${STOCKFISH_API_TOKEN:-development_token}
+      - DOMAIN=*
+    ports:
+      - "4000:4000"
     networks:
       - portfolio-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "nc", "-z", "localhost", "4000"]
       interval: 30s
       timeout: 5s
       retries: 3

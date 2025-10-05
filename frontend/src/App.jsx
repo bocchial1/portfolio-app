@@ -2,444 +2,121 @@ import React, { useState, useEffect, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom'
 import './index.css'
 
-/**
- * Main Portfolio Application Component
- * 
- * This component manages the entire portfolio website including:
- * - State management for theme (dark/light mode)
- * - Data fetching from backend API
- * - Navigation and smooth scrolling
- * - Responsive design with animations
- */
-function App() {
-  // State management for theme toggle
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    // Initialize theme from localStorage or default to light mode
-    const savedTheme = localStorage.getItem('theme')
-    return savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  })
-
-  // State management for data fetching
-  const [resumeData, setResumeData] = useState(null)
-  const [projectsData, setProjectsData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  // State management for scroll navigation
-  const [activeSection, setActiveSection] = useState('home')
-  const [scrollProgress, setScrollProgress] = useState(0)
-  
-  // Refs for sections
-  const homeRef = useRef(null)
-  const resumeRef = useRef(null)
-  const projectsRef = useRef(null)
-
-  // Effect to apply theme to document and persist to localStorage
-  useEffect(() => {
-    const htmlElement = document.documentElement
-    if (isDarkMode) {
-      htmlElement.classList.add('dark')
-    } else {
-      htmlElement.classList.remove('dark')
-    }
-    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light')
-  }, [isDarkMode])
-
-  // Effect to fetch data from backend API on component mount
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        
-        // Fetch resume and projects data in parallel
-        const [resumeResponse, projectsResponse] = await Promise.all([
-          fetch('/api/resume'),
-          fetch('/api/projects')
-        ])
-
-        if (!resumeResponse.ok || !projectsResponse.ok) {
-          throw new Error('Failed to fetch data from server')
-        }
-
-        const resume = await resumeResponse.json()
-        const projects = await projectsResponse.json()
-        
-        setResumeData(resume)
-        setProjectsData(projects)
-      } catch (err) {
-        console.error('Error fetching data:', err)
-        setError('Failed to load portfolio data. Please try again later.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchData()
-  }, [])
-
-  // Effect to handle scroll detection and navigation
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollTop = window.pageYOffset
-      const docHeight = document.documentElement.scrollHeight - window.innerHeight
-      const scrollPercent = (scrollTop / docHeight) * 100
-      setScrollProgress(scrollPercent)
-
-      // Determine active section based on scroll position
-      const sections = [
-        { id: 'home', ref: homeRef },
-        { id: 'resume', ref: resumeRef },
-        { id: 'projects', ref: projectsRef }
-      ]
-
-      for (let i = sections.length - 1; i >= 0; i--) {
-        const section = sections[i]
-        if (section.ref.current) {
-          const rect = section.ref.current.getBoundingClientRect()
-          if (rect.top <= 100) {
-            setActiveSection(section.id)
-            break
-          }
-        }
-      }
-    }
-
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
-
-  // Effect to handle scroll animations
-  useEffect(() => {
-    const observerOptions = {
-      threshold: 0.1,
-      rootMargin: '0px 0px -50px 0px'
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-visible')
-        }
-      })
-    }, observerOptions)
-
-    // Observe all sections with fade-in-section class
-    const sections = document.querySelectorAll('.fade-in-section')
-    sections.forEach(section => observer.observe(section))
-
-    return () => observer.disconnect()
-  }, [resumeData, projectsData])
-
-  /**
-   * Toggle between dark and light mode
-   */
-  const toggleTheme = () => {
-    setIsDarkMode(prev => !prev)
+class StockfishClient {
+  constructor(sessionId) {
+    this.sessionId = sessionId;
+    this.ws = null;
+    this.messageQueue = [];
+    this.isConnected = false;
   }
 
-  /**
-   * Smooth scroll to a specific section
-   * @param {string} sectionId - The ID of the section to scroll to
-   */
-  const scrollToSection = (sectionId) => {
-    const refs = {
-      home: homeRef,
-      resume: resumeRef,
-      projects: projectsRef
+  connect() {
+    const wsUrl = window.location.protocol === 'https:' 
+      ? `wss://${window.location.host}/ws/chess/${this.sessionId}`
+      : `ws://${window.location.host}/ws/chess/${this.sessionId}`;
+    
+    console.log('Connecting to WebSocket:', wsUrl);
+    this.ws = new WebSocket(wsUrl);
+    
+    this.ws.onopen = () => {
+      console.log('WebSocket connected');
+      this.isConnected = true;
+      while (this.messageQueue.length > 0) {
+        const msg = this.messageQueue.shift();
+        this.sendCommand(msg);
+      }
+    };
+    
+    this.ws.onclose = () => {
+      console.log('WebSocket disconnected, attempting to reconnect...');
+      this.isConnected = false;
+      setTimeout(() => this.connect(), 5000);
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    this.ws.onmessage = (event) => {
+      console.log('Received WebSocket message:', event.data);
+    };
+  }
+
+  sendCommand(command) {
+    if (!this.isConnected) {
+      this.messageQueue.push(command);
+      return;
     }
     
-    const targetRef = refs[sectionId]
-    if (targetRef && targetRef.current) {
-      targetRef.current.scrollIntoView({ 
-        behavior: 'smooth',
-        block: 'start'
-      })
-    }
+    this.ws.send(JSON.stringify({ command }));
   }
 
-  /**
-   * Render loading state
-   */
-  const renderLoadingState = () => (
-    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-900">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-600 dark:text-gray-300">Loading...</p>
-      </div>
-    </div>
-  )
+  async analyzePosition(fen, depth = 20, movetime = 1000) {
+    const response = await fetch('/api/chess/engine/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fen,
+        depth,
+        movetime,
+        session_id: this.sessionId
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to analyze position');
+    }
+    
+    return await response.json();
+  }
+}
 
-  /**
-   * Render error state
-   */
-  const renderErrorState = () => (
-    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-900">
-      <div className="text-center">
-        <div className="text-red-500 text-6xl mb-4">⚠️</div>
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Oops!</h2>
-        <p className="text-gray-600 dark:text-gray-300">{error}</p>
-        <button 
-          onClick={() => window.location.reload()} 
-          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Try Again
-        </button>
-      </div>
-    </div>
-  )
-
-  // Show loading or error states
-  if (loading) return renderLoadingState()
-  if (error) return renderErrorState()
-
+function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<PortfolioHome />} />
+        <Route path="/home" element={<PortfolioHome />} />
+        <Route path="/chess" element={<ChessProject />} />
         <Route path="/chess-project" element={<ChessProject />} />
       </Routes>
     </Router>
   )
 }
 
-// Main Portfolio Home Component
 function PortfolioHome() {
-  // State management for theme toggle
+  const navigate = useNavigate();
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    // Initialize theme from localStorage or default to light mode
-    const savedTheme = localStorage.getItem('theme')
-    return savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  })
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  });
 
-  // State management for data fetching
-  const [resumeData, setResumeData] = useState(null)
-  const [projectsData, setProjectsData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  // State management for scroll navigation
-  const [activeSection, setActiveSection] = useState('home')
-  const [scrollProgress, setScrollProgress] = useState(0)
-  
-  // Refs for sections
-  const homeRef = useRef(null)
-  const resumeRef = useRef(null)
-  const projectsRef = useRef(null)
-
-  // Effect to apply theme to document and persist to localStorage
   useEffect(() => {
-    const htmlElement = document.documentElement
+    const htmlElement = document.documentElement;
     if (isDarkMode) {
-      htmlElement.classList.add('dark')
+      htmlElement.classList.add('dark');
     } else {
-      htmlElement.classList.remove('dark')
+      htmlElement.classList.remove('dark');
     }
-    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light')
-  }, [isDarkMode])
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
 
-  // Effect to fetch data from backend API on component mount
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        
-        // Fetch resume and projects data in parallel
-        const [resumeResponse, projectsResponse] = await Promise.all([
-          fetch('/api/resume'),
-          fetch('/api/projects')
-        ])
-
-        if (!resumeResponse.ok || !projectsResponse.ok) {
-          throw new Error('Failed to fetch data from server')
-        }
-
-        const resume = await resumeResponse.json()
-        const projects = await projectsResponse.json()
-        
-        setResumeData(resume)
-        setProjectsData(projects)
-      } catch (err) {
-        console.error('Error fetching data:', err)
-        setError('Failed to load portfolio data. Please try again later.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchData()
-  }, [])
-
-  // Effect to handle scroll detection and navigation
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollTop = window.pageYOffset
-      const docHeight = document.documentElement.scrollHeight - window.innerHeight
-      const scrollPercent = (scrollTop / docHeight) * 100
-      setScrollProgress(scrollPercent)
-
-      // Determine active section based on scroll position
-      const sections = [
-        { id: 'home', ref: homeRef },
-        { id: 'resume', ref: resumeRef },
-        { id: 'projects', ref: projectsRef }
-      ]
-
-      for (let i = sections.length - 1; i >= 0; i--) {
-        const section = sections[i]
-        if (section.ref.current) {
-          const rect = section.ref.current.getBoundingClientRect()
-          if (rect.top <= 100) {
-            setActiveSection(section.id)
-            break
-          }
-        }
-      }
-    }
-
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
-
-  // Effect to handle scroll animations
-  useEffect(() => {
-    const observerOptions = {
-      threshold: 0.1,
-      rootMargin: '0px 0px -50px 0px'
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-visible')
-        }
-      })
-    }, observerOptions)
-
-    // Observe all sections with fade-in-section class
-    const sections = document.querySelectorAll('.fade-in-section')
-    sections.forEach(section => observer.observe(section))
-
-    return () => observer.disconnect()
-  }, [resumeData, projectsData])
-
-  /**
-   * Toggle between dark and light mode
-   */
   const toggleTheme = () => {
-    setIsDarkMode(prev => !prev)
-  }
-
-  /**
-   * Smooth scroll to a specific section
-   * @param {string} sectionId - The ID of the section to scroll to
-   */
-  const scrollToSection = (sectionId) => {
-    const refs = {
-      home: homeRef,
-      resume: resumeRef,
-      projects: projectsRef
-    }
-    
-    const targetRef = refs[sectionId]
-    if (targetRef && targetRef.current) {
-      targetRef.current.scrollIntoView({ 
-        behavior: 'smooth',
-        block: 'start'
-      })
-    }
-  }
-
-  /**
-   * Render loading state
-   */
-  const renderLoadingState = () => (
-    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-900">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-600 dark:text-gray-300">Loading...</p>
-      </div>
-    </div>
-  )
-
-  /**
-   * Render error state
-   */
-  const renderErrorState = () => (
-    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-900">
-      <div className="text-center">
-        <div className="text-red-500 text-6xl mb-4">⚠️</div>
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Oops!</h2>
-        <p className="text-gray-600 dark:text-gray-300">{error}</p>
-        <button 
-          onClick={() => window.location.reload()} 
-          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Try Again
-        </button>
-      </div>
-    </div>
-  )
-
-  // Show loading or error states
-  if (loading) return renderLoadingState()
-  if (error) return renderErrorState()
+    setIsDarkMode(prev => !prev);
+  };
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
-      {/* Scroll Progress Bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-blue-600 transition-all duration-300" 
-           style={{ width: `${scrollProgress}%` }} />
-      
-      {/* Navigation Header */}
-      <nav className="fixed top-1 left-0 right-0 z-40 glass-effect">
+      <nav className="fixed top-0 left-0 right-0 z-50 glass-effect">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            {/* Logo/Brand */}
             <div className="flex-shrink-0">
-              <h1 className="text-xl font-bold text-gray-800 dark:text-white">
+              <button className="text-xl font-bold text-gray-800 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                 Alex's Portfolio
-              </h1>
+              </button>
             </div>
-            
-            {/* Navigation Links */}
-            <div className="hidden md:block">
-              <div className="ml-10 flex items-baseline space-x-4">
-                <button
-                  onClick={() => scrollToSection('home')}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    activeSection === 'home' 
-                      ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20' 
-                      : 'text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400'
-                  }`}
-                >
-                  Home
-                </button>
-                <button
-                  onClick={() => scrollToSection('resume')}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    activeSection === 'resume' 
-                      ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20' 
-                      : 'text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400'
-                  }`}
-                >
-                  Resume
-                </button>
-                <button
-                  onClick={() => scrollToSection('projects')}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    activeSection === 'projects' 
-                      ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20' 
-                      : 'text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400'
-                  }`}
-                >
-                  Projects
-                </button>
-              </div>
-            </div>
-
-            {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
               className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
@@ -459,239 +136,303 @@ function PortfolioHome() {
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section ref={homeRef} id="home" className="h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
-        <div className="text-center">
-          <h1 className="text-5xl md:text-7xl font-bold text-gray-800 dark:text-white mb-6 animate-fade-in">
-            Welcome to Alex's Portfolio
-          </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 animate-fade-in">
-            Scroll down to explore my experience and projects
-          </p>
-          <div className="animate-bounce-slow">
-            <svg className="w-8 h-8 mx-auto text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-            </svg>
+      <main className="pt-16">
+        {/* Hero Section */}
+        <section className="py-20 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center">
+              <h1 className="text-5xl md:text-6xl font-bold text-gray-800 dark:text-white mb-6">
+                Welcome to My Portfolio
+              </h1>
+              <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-3xl mx-auto">
+                Software Engineer specializing in full-stack development, with a focus on creating scalable and efficient solutions.
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Resume Section */}
-      <section ref={resumeRef} id="resume" className="py-20 bg-white dark:bg-gray-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="fade-in-section">
-            <h2 className="text-4xl font-bold text-center text-gray-800 dark:text-white mb-16">
-              About Me
-            </h2>
-            
-            {/* Headshot and Bio Section */}
-            <div className="mb-16">
-              <div className="flex flex-col lg:flex-row items-center lg:items-start gap-8 lg:gap-12">
-                {/* Headshot */}
-                <div className="flex-shrink-0">
-                  <div className="relative">
-                    <img 
-                      src="/headshot.jpg" 
-                      alt="Alex's Headshot" 
-                      className="w-48 h-48 lg:w-56 lg:h-56 rounded-full object-cover shadow-2xl border-4 border-blue-200 dark:border-blue-800"
-                      onError={(e) => {
-                        // Fallback to a placeholder if image doesn't exist
-                        e.target.style.display = 'none'
-                        e.target.nextSibling.style.display = 'block'
-                      }}
-                    />
-                    {/* Placeholder if no image */}
-                    <div className="w-48 h-48 lg:w-56 lg:h-56 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-2xl border-4 border-blue-200 dark:border-blue-800" style={{display: 'none'}}>
-                      <span className="text-white text-4xl font-bold">A</span>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Bio Text */}
-                <div className="flex-1 text-center lg:text-left">
-                  <h3 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">
-                    Hi, I'm Alex
-                  </h3>
-                  <div className="space-y-4 text-lg text-gray-600 dark:text-gray-300 leading-relaxed">
-                    <p>
-                      I'm a passionate software developer with a strong background in full-stack development, 
-                      cloud technologies, and modern web frameworks. With 3 years of experience in the tech industry, 
-                      I've had the opportunity to work on diverse projects ranging from enterprise applications to 
-                      interesting side projects.
-                    </p>
-                    <p>
-                      My expertise spans across multiple technologies including React, Node.js, Python, AWS, and Docker. 
-                      I'm particularly passionate about creating scalable, maintainable code and implementing best 
-                      practices in software development. This portfolio is a collection of my work and projects.
-                    </p>
-                    <p>
-                      When I'm not coding, you can find me exploring new technologies, contributing to open-source 
-                      projects, or playing chess. I believe in continuous learning and staying up-to-date with the latest industry trends.
-                    </p>
-                  </div>
-                  
-                  {/* Skills Tags */}
-                  <div className="mt-8">
-                    <h4 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-4">Key Skills</h4>
-                    <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
-                      {['React', 'Node.js', 'Python', 'AWS', 'Docker', 'TypeScript', 'PostgreSQL', 'MongoDB', 'Git', 'CI/CD'].map((skill, index) => (
-                        <span 
-                          key={index}
-                          className="px-4 py-2 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
-                        >
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+        {/* Projects Section */}
+        <section className="py-20 bg-white dark:bg-gray-900">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-4">
+                Featured Projects
+              </h2>
             </div>
             
-            {/* Experience Section */}
-            <div className="mb-16">
-              <h3 className="text-2xl font-semibold text-gray-700 dark:text-gray-300 mb-8">Professional Experience</h3>
-              <div className="space-y-8">
-                {resumeData?.experience?.map((job, index) => (
-                  <div key={index} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 shadow-lg hover:shadow-xl transition-shadow">
-                    <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-4">
-                      <div>
-                        <h4 className="text-xl font-semibold text-gray-800 dark:text-white">{job.title}</h4>
-                        <p className="text-lg text-blue-600 dark:text-blue-400 font-medium">{job.company}</p>
-                      </div>
-                      <span className="text-sm text-gray-600 dark:text-gray-400 mt-2 md:mt-0">{job.dates}</span>
-                    </div>
-                    <ul className="space-y-2">
-                      {job.description.map((desc, descIndex) => (
-                        <li key={descIndex} className="text-gray-600 dark:text-gray-300 flex items-start">
-                          <span className="text-blue-500 mr-2 mt-1">•</span>
-                          {desc}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Chess Project Card */}
+              <div 
+                className="bg-gray-100 dark:bg-gray-800 rounded-lg p-6 hover:shadow-lg transition-all cursor-pointer"
+                onClick={() => navigate('/chess')}
+              >
+                <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3">
+                  Chess Application (AI Opponent)
+                </h3>
+                <p className="text-gray-600 dark:text-gray-300">
+                  An intelligent chess engine that analyzes positions and provides optimal moves in real-time.
+                </p>
               </div>
-            </div>
 
-            {/* Education Section */}
-            <div>
-              <h3 className="text-2xl font-semibold text-gray-700 dark:text-gray-300 mb-8">Education</h3>
-              <div className="space-y-6">
-                {resumeData?.education?.map((edu, index) => (
-                  <div key={index} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 shadow-lg hover:shadow-xl transition-shadow">
-                    <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-4">
-                      <div>
-                        <h4 className="text-xl font-semibold text-gray-800 dark:text-white">{edu.degree}</h4>
-                        <p className="text-lg text-blue-600 dark:text-blue-400 font-medium">{edu.university}</p>
-                      </div>
-                      <span className="text-sm text-gray-600 dark:text-gray-400 mt-2 md:mt-0">{edu.dates}</span>
-                    </div>
-                    <ul className="space-y-2">
-                      {edu.description.map((desc, descIndex) => (
-                        <li key={descIndex} className="text-gray-600 dark:text-gray-300 flex items-start">
-                          <span className="text-blue-500 mr-2 mt-1">•</span>
-                          {desc}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+              {/* Other Project Cards */}
+              <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-6">
+                <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3">
+                  AIOps Agent
+                </h3>
+                <p className="text-gray-600 dark:text-gray-300">
+                  AI-powered operations agent for proactive system monitoring and failure prediction.
+                </p>
               </div>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* Projects Section */}
-      <section ref={projectsRef} id="projects" className="py-20 bg-gray-50 dark:bg-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="fade-in-section">
-            <h2 className="text-4xl font-bold text-center text-gray-800 dark:text-white mb-16">
-              Featured Projects
-            </h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {projectsData?.map((project, index) => {
-                const isChessProject = project.title.includes('Chess')
-                return (
-                  <div 
-                    key={index} 
-                    className={`bg-white dark:bg-gray-900 rounded-lg p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 ${
-                      isChessProject ? 'cursor-pointer' : ''
-                    }`}
-                    onClick={isChessProject ? () => window.location.href = '/chess-project' : undefined}
-                  >
-                    <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-3">
-                      {project.title}
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-300 mb-4">
-                      {project.description}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {project.technologies.map((tech, techIndex) => (
-                        <span 
-                          key={techIndex}
-                          className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm rounded-full"
-                        >
-                          {tech}
-                        </span>
-                      ))}
-                    </div>
-                    {isChessProject && (
-                      <div className="mt-4 text-blue-600 dark:text-blue-400 text-sm font-medium">
-                        Click to learn more →
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-gray-800 dark:bg-gray-900 text-white py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <p className="text-gray-400">
-            © 2024 Alex's Portfolio. Built with React, FastAPI, and Docker.
-          </p>
-        </div>
-      </footer>
+        </section>
+      </main>
     </div>
-  )
+  );
 }
 
-// Chess Project Page Component
 function ChessProject() {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const savedTheme = localStorage.getItem('theme')
-    return savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  })
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  });
+
+  const [playerColor, setPlayerColor] = useState('white');
+  const [gameStarted, setGameStarted] = useState(false);
+  const [stockfish] = useState(() => new StockfishClient('default'));
 
   useEffect(() => {
-    const htmlElement = document.documentElement
+    const htmlElement = document.documentElement;
     if (isDarkMode) {
-      htmlElement.classList.add('dark')
+      htmlElement.classList.add('dark');
     } else {
-      htmlElement.classList.remove('dark')
+      htmlElement.classList.remove('dark');
     }
-    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light')
-  }, [isDarkMode])
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    stockfish.connect();
+  }, []);
 
   const toggleTheme = () => {
-    setIsDarkMode(prev => !prev)
-  }
+    setIsDarkMode(prev => !prev);
+  };
+
+  const convertPositionToFEN = (position) => {
+    if (!position || position === 'start') {
+      return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    }
+    
+    let fen = '';
+    for (let rank = 8; rank >= 1; rank--) {
+      let emptyCount = 0;
+      for (let file = 0; file < 8; file++) {
+        const square = String.fromCharCode(97 + file) + rank;
+        const piece = position[square];
+        if (piece) {
+          if (emptyCount > 0) {
+            fen += emptyCount;
+            emptyCount = 0;
+          }
+          fen += piece;
+        } else {
+          emptyCount++;
+        }
+      }
+      if (emptyCount > 0) {
+        fen += emptyCount;
+      }
+      if (rank > 1) {
+        fen += '/';
+      }
+    }
+    fen += ' w KQkq - 0 1';
+    return fen;
+  };
+
+  const addMoveToLog = (move, isAI = false) => {
+    const moveLog = document.getElementById('moveLog');
+    if (!moveLog) return;
+
+    const moveEntry = document.createElement('div');
+    moveEntry.className = `flex justify-between items-center py-2 px-3 rounded mb-2 ${
+      isAI ? 'bg-purple-100 dark:bg-purple-900' : 'bg-blue-100 dark:bg-blue-900'
+    }`;
+    
+    const moveText = isAI ? `AI: ${move.san || move}` : `User: ${move.san || move}`;
+    
+    moveEntry.innerHTML = `
+      <span class="text-sm font-medium text-gray-800 dark:text-white">${moveText}</span>
+      <span class="text-xs text-gray-500 dark:text-gray-400">${new Date().toLocaleTimeString()}</span>
+    `;
+    
+    if (moveLog.children.length === 1 && moveLog.children[0].textContent.includes('No moves yet')) {
+      moveLog.innerHTML = '';
+    }
+    
+    moveLog.appendChild(moveEntry);
+    moveLog.scrollTop = moveLog.scrollHeight;
+  };
+
+  const clearMoveLog = () => {
+    const moveLog = document.getElementById('moveLog');
+    if (moveLog) {
+      moveLog.innerHTML = `
+        <div class="text-gray-500 dark:text-gray-400 text-sm">
+          No moves yet. Start playing to see the move history.
+        </div>
+      `;
+    }
+  };
+
+  const initializeChessboard = () => {
+    if (typeof window.$ !== 'undefined' && typeof window.Chessboard !== 'undefined') {
+      try {
+        const board = window.Chessboard('chessboard', {
+          draggable: true,
+          dropOffBoard: 'trash',
+          sparePieces: false,
+          position: 'start',
+          orientation: playerColor,
+          pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+          onDrop: async (source, target, piece, newPos, oldPos, orientation) => {
+            // Validation checks
+            if (!gameStarted) {
+              return false;
+            }
+            
+            const fen = convertPositionToFEN(newPos);
+            const currentTurn = fen.includes(' w ') ? 'white' : 'black';
+            
+            if (currentTurn !== playerColor) {
+              return false;
+            }
+
+            // Log player move
+            const move = {
+              from: source,
+              to: target,
+              piece: piece,
+              san: `${piece}${source}${target}`
+            };
+            addMoveToLog(move, false);
+
+            // Get and make AI move
+            try {
+              const analysis = await stockfish.analyzePosition(fen);
+              if (analysis.bestMove) {
+                // Make AI move using the correct format
+                const aiMove = {
+                  from: analysis.bestMove.slice(0, 2),
+                  to: analysis.bestMove.slice(2, 4),
+                  promotion: analysis.bestMove.length > 4 ? analysis.bestMove[4] : undefined
+                };
+                
+                // Update board with AI's move
+                const newPosition = { ...newPos };
+                const piece = newPosition[aiMove.from];
+                delete newPosition[aiMove.from];
+                newPosition[aiMove.to] = piece;
+                board.position(newPosition, false);
+
+                // Log AI move
+                addMoveToLog({
+                  ...aiMove,
+                  san: analysis.bestMove,
+                  eval: analysis.evaluation
+                }, true);
+
+                // Update status
+                const statusDiv = document.getElementById('chessStatus');
+                if (statusDiv) {
+                  statusDiv.innerHTML = `
+                    <div class="text-green-600 dark:text-green-400 font-semibold">
+                      AI Move: ${analysis.bestMove} (Evaluation: ${analysis.evaluation})
+                    </div>
+                  `;
+                }
+              }
+            } catch (error) {
+              console.error('Error getting AI move:', error);
+              const statusDiv = document.getElementById('chessStatus');
+              if (statusDiv) {
+                statusDiv.innerHTML = `
+                  <div class="text-red-600 dark:text-red-400 font-semibold">
+                    Error: ${error.message}
+                  </div>
+                `;
+              }
+              return false;
+            }
+            
+            return true;
+          }
+        });
+
+        const startBtn = document.getElementById('startBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const randomBtn = document.getElementById('randomBtn');
+        const whiteBtn = document.getElementById('whiteBtn');
+        const blackBtn = document.getElementById('blackBtn');
+
+        if (startBtn) {
+          startBtn.onclick = () => {
+            board.start();
+            clearMoveLog();
+            addMoveToLog('Game started', false);
+            setGameStarted(true);
+          };
+        }
+        if (clearBtn) {
+          clearBtn.onclick = () => {
+            board.clear();
+            clearMoveLog();
+            setGameStarted(false);
+          };
+        }
+        if (randomBtn) {
+          randomBtn.onclick = () => {
+            const positions = [
+              'start',
+              'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+              'r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1',
+              '8/8/8/8/8/8/8/8 w - - 0 1'
+            ];
+            const randomPosition = positions[Math.floor(Math.random() * positions.length)];
+            board.position(randomPosition);
+          };
+        }
+        if (whiteBtn) {
+          whiteBtn.onclick = () => {
+            setPlayerColor('white');
+            board.orientation('white');
+          };
+        }
+        if (blackBtn) {
+          blackBtn.onclick = () => {
+            setPlayerColor('black');
+            board.orientation('black');
+          };
+        }
+      } catch (error) {
+        console.error('Error initializing chessboard:', error);
+      }
+    } else {
+      setTimeout(initializeChessboard, 100);
+    }
+  };
+
+  useEffect(() => {
+    initializeChessboard();
+  }, [playerColor]);
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
-      {/* Navigation Header */}
       <nav className="fixed top-0 left-0 right-0 z-50 glass-effect">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            {/* Logo/Brand */}
             <div className="flex-shrink-0">
               <button 
                 onClick={() => navigate('/')}
@@ -700,8 +441,6 @@ function ChessProject() {
                 Alex's Portfolio
               </button>
             </div>
-            
-            {/* Navigation Links */}
             <div className="hidden md:block">
               <div className="ml-10 flex items-baseline space-x-4">
                 <button
@@ -712,8 +451,6 @@ function ChessProject() {
                 </button>
               </div>
             </div>
-
-            {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
               className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
@@ -733,7 +470,6 @@ function ChessProject() {
         </div>
       </nav>
 
-      {/* Hero Section */}
       <section className="pt-20 pb-16 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
@@ -744,129 +480,112 @@ function ChessProject() {
               A machine learning-powered chess engine that serves as an intelligent AI opponent, 
               analyzing complex game states to predict and execute optimal moves in real-time.
             </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              {['C++', 'Machine Learning', 'AI', 'Game Development', 'UI/UX'].map((tech, index) => (
-                <span 
-                  key={index}
-                  className="px-4 py-2 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium"
-                >
-                  {tech}
-                </span>
-              ))}
-            </div>
           </div>
         </div>
       </section>
 
-      {/* Project Details */}
       <section className="py-20 bg-white dark:bg-gray-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            {/* Project Description */}
-            <div>
+          <div className="space-y-12">
+            <div className="prose prose-lg dark:prose-invert max-w-none">
               <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">
                 Project Overview
               </h2>
               <div className="space-y-4 text-lg text-gray-600 dark:text-gray-300">
                 <p>
-                  This chess application represents a personal exploration into artificial intelligence and game theory. 
-                  The project combines traditional chess programming techniques with modern machine learning approaches 
-                  to create an engaging and challenging opponent.
-                </p>
-                <p>
-                  The AI opponent analyzes complex game states, evaluates potential moves, and executes strategies 
-                  that adapt to the player's skill level. Built entirely in C++ for performance, the application 
-                  focuses on logical accuracy and real-time decision making.
-                </p>
-                <p>
-                  The user interface was designed for simplicity and ease of use, allowing for quick games and 
-                  testing of the AI's capabilities. The project serves as both a learning tool and a demonstration 
-                  of AI principles in game development.
+                  This project is a web-based chess application, bringing a C++ chess engine I developed during my university studies to life with a modern JavaScript interface.
                 </p>
               </div>
             </div>
 
-            {/* Chess Board Visual */}
             <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-8">
-              <div className="grid grid-cols-8 gap-1 bg-white dark:bg-gray-700 p-4 rounded-lg">
-                {Array.from({ length: 64 }, (_, i) => {
-                  const row = Math.floor(i / 8)
-                  const col = i % 8
-                  const isLight = (row + col) % 2 === 0
-                  return (
-                    <div 
-                      key={i}
-                      className={`w-8 h-8 flex items-center justify-center text-sm ${
-                        isLight ? 'bg-yellow-100 dark:bg-yellow-900' : 'bg-green-100 dark:bg-green-900'
+              <div className="flex flex-col items-center max-w-4xl mx-auto">
+                <div className="w-full max-w-[600px]">
+                  <div id="chessboard" style={{ width: '100%', maxWidth: '600px' }} className="bg-white dark:bg-gray-700 rounded-lg shadow-lg">
+                    <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                      Loading chess board...
+                    </div>
+                  </div>
+                  
+                  <div className="mt-6 flex gap-4 flex-wrap justify-center">
+                    <button 
+                      id="whiteBtn" 
+                      className={`px-4 py-2 rounded-lg transition-colors ${
+                        playerColor === 'white'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                       }`}
                     >
-                      {i === 0 && '♔'}
-                      {i === 7 && '♖'}
-                      {i === 56 && '♜'}
-                      {i === 63 && '♚'}
+                      Play as White
+                    </button>
+                    <button 
+                      id="blackBtn" 
+                      className={`px-4 py-2 rounded-lg transition-colors ${
+                        playerColor === 'black'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      Play as Black
+                    </button>
+                  </div>
+                  <div className="mt-4 flex gap-4 justify-center">
+                    <button 
+                      id="startBtn" 
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Start Position
+                    </button>
+                    <button 
+                      id="clearBtn" 
+                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                    >
+                      Clear Board
+                    </button>
+                    <button 
+                      id="randomBtn" 
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Random Position
+                    </button>
+                  </div>
+                  <div id="chessStatus" className="text-center text-sm text-gray-600 dark:text-gray-400 mt-4">
+                    {gameStarted 
+                      ? `Your turn (playing as ${playerColor})` 
+                      : 'Click Start Position to begin'}
+                  </div>
+                </div>
+
+                <div className="w-full max-w-[600px] mt-8">
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">Move Log</h3>
+                  <div id="moveLog" className="bg-white dark:bg-gray-700 rounded-lg p-4 max-h-60 overflow-y-auto">
+                    <div className="text-gray-500 dark:text-gray-400 text-sm">
+                      No moves yet. Start playing to see the move history.
                     </div>
-                  )
-                })}
+                  </div>
+                  <div className="mt-4 flex gap-2 justify-end">
+                    <button 
+                      id="clearLogBtn" 
+                      className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600 transition-colors"
+                      onClick={clearMoveLog}
+                    >
+                      Clear Log
+                    </button>
+                    <button 
+                      id="exportLogBtn" 
+                      className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 transition-colors"
+                    >
+                      Export Log
+                    </button>
+                  </div>
+                </div>
               </div>
-              <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-4">
-                Chess Board Interface
-              </p>
             </div>
           </div>
         </div>
       </section>
-
-      {/* Technical Details */}
-      <section className="py-20 bg-gray-50 dark:bg-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-bold text-center text-gray-800 dark:text-white mb-16">
-            Technical Implementation
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <div className="bg-white dark:bg-gray-900 rounded-lg p-6 shadow-lg">
-              <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">AI Engine</h3>
-              <ul className="space-y-2 text-gray-600 dark:text-gray-300">
-                <li>• Minimax algorithm implementation</li>
-                <li>• Alpha-beta pruning optimization</li>
-                <li>• Position evaluation functions</li>
-                <li>• Move generation and validation</li>
-              </ul>
-            </div>
-
-            <div className="bg-white dark:bg-gray-900 rounded-lg p-6 shadow-lg">
-              <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Machine Learning</h3>
-              <ul className="space-y-2 text-gray-600 dark:text-gray-300">
-                <li>• Neural network integration</li>
-                <li>• Pattern recognition algorithms</li>
-                <li>• Adaptive difficulty levels</li>
-                <li>• Learning from game outcomes</li>
-              </ul>
-            </div>
-
-            <div className="bg-white dark:bg-gray-900 rounded-lg p-6 shadow-lg">
-              <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Performance</h3>
-              <ul className="space-y-2 text-gray-600 dark:text-gray-300">
-                <li>• Real-time move calculation</li>
-                <li>• Memory-efficient algorithms</li>
-                <li>• Optimized C++ implementation</li>
-                <li>• Cross-platform compatibility</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-gray-800 dark:bg-gray-900 text-white py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <p className="text-gray-400">
-            © 2024 Alex's Portfolio. Built with React, FastAPI, and Docker.
-          </p>
-        </div>
-      </footer>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
