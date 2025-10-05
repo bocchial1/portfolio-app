@@ -111,3 +111,6 @@ venv.bak/
 
 # Docker
 .dockerignore
+
+
+dockfish/

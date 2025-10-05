@@ -646,6 +646,31 @@ function PortfolioHome() {
                   </div>
                 )
               })}
+              {/* Static Soccer Project card */}
+              <div 
+                className="bg-white dark:bg-gray-900 rounded-lg p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 cursor-pointer"
+                onClick={() => window.open('/soccerproject.html', '_blank', 'noopener,noreferrer')}
+              >
+                <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-3">
+                  Coach's Hub (Soccer Project)
+                </h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">
+                  Interactive project plan showcasing the player development & analytics toolkit.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {['HTML', 'Tailwind CSS', 'Vanilla JS'].map((tech, idx) => (
+                    <span 
+                      key={idx}
+                      className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm rounded-full"
+                    >
+                      {tech}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-4 text-blue-600 dark:text-blue-400 text-sm font-medium">
+                  Opens in new tab →
+                </div>
+              </div>
             </div>
           </div>
         </div>
